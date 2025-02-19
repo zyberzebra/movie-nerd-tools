@@ -101,21 +101,26 @@ function getOrdinalSuffix(n: number): string {
 
 function createMovieAnniversaryElement(movie: MovieAnniversary) {
   const element = document.createElement('div')
+  const yearsSinceRelease = movie.nextAnniversary.getFullYear() - movie.releaseDate.getFullYear()
+  const isMilestone = yearsSinceRelease % 5 === 0
+  
   element.style.cssText = `
     padding: 12px;
     border-bottom: 1px solid #2c3440;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    ${isMilestone ? 'background: linear-gradient(90deg, rgba(0, 192, 48, 0.1), transparent);' : ''}
+    transition: all 0.3s ease;
   `
   
-  const yearsSinceRelease = movie.nextAnniversary.getFullYear() - movie.releaseDate.getFullYear()
+  const emoji = isMilestone ? (yearsSinceRelease >= 50 ? '🎊' : yearsSinceRelease >= 25 ? '🎬 🎉' : '🎬') : ''
   
   element.innerHTML = `
     <div style="flex: 1">
       <a href="${movie.url}" style="color: #fff; text-decoration: none; font-weight: 500;">${movie.title}</a>
-      <div style="color: #89a; font-size: 13px; margin-top: 4px;">
-        ${yearsSinceRelease}${getOrdinalSuffix(yearsSinceRelease)} anniversary on ${formatDate(movie.nextAnniversary)}
+      <div style="color: ${isMilestone ? '#00c030' : '#89a'}; font-size: 13px; margin-top: 4px; font-weight: ${isMilestone ? '600' : 'normal'};">
+        ${emoji} ${yearsSinceRelease}${getOrdinalSuffix(yearsSinceRelease)} anniversary on ${formatDate(movie.nextAnniversary)}
       </div>
     </div>
     <button class="calendar-export-btn" aria-label="Export to calendar" style="margin-left: 12px;">
@@ -172,11 +177,10 @@ function calculateNextMilestoneAnniversary(releaseDate: Date): { date: Date; yea
 }
 
 function formatDate(date: Date): string {
-  return date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  })
+  const day = date.getDate().toString().padStart(2, '0');
+  const month = date.toLocaleString('en-US', { month: 'long' });
+  const year = date.getFullYear();
+  return `${day} ${month} ${year}`;
 }
 
 let isInitialized = false
@@ -298,8 +302,12 @@ function init() {
     }
     
     const yearsSinceRelease = nextAnniversary.getFullYear() - releaseDate.getFullYear()
+    const isMilestone = yearsSinceRelease % 5 === 0
+    const emoji = isMilestone ? (yearsSinceRelease >= 50 ? '🎊' : yearsSinceRelease >= 25 ? '🎬 🎉' : '🎬') : ''
+    
     anniversaryElement.innerHTML = `
-      <div class="anniversary-text">${yearsSinceRelease}${getOrdinalSuffix(yearsSinceRelease)} anniversary on ${formatDate(nextAnniversary)}
+      <div class="anniversary-text" style="${isMilestone ? 'color: #00c030; font-weight: 600;' : ''}">
+        ${emoji} ${yearsSinceRelease}${getOrdinalSuffix(yearsSinceRelease)} anniversary on ${formatDate(nextAnniversary)}
         <div class="milestone-tooltip">${nextMilestone.years}${getOrdinalSuffix(nextMilestone.years)} anniversary on ${formatDate(nextMilestone.date)}</div>
       </div>
       <button class="calendar-export-btn" aria-label="Export to calendar">
@@ -326,21 +334,24 @@ function init() {
       }
       .next-anniversary .milestone-tooltip {
         visibility: hidden;
-        background-color: rgba(0, 0, 0, 0.9);
+        background: linear-gradient(135deg, rgba(20, 24, 28, 0.95) 0%, rgba(35, 40, 45, 0.95) 100%);
         color: #fff;
         text-align: center;
-        padding: 8px;
-        border-radius: 4px;
+        padding: 12px 16px;
+        border-radius: 6px;
         position: absolute;
         z-index: 1;
         width: max-content;
         bottom: 125%;
         left: 50%;
         transform: translateX(-50%);
-        font-style: italic;
-        font-size: 12px;
+        font-size: 13px;
         opacity: 0;
-        transition: opacity 0.2s;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        letter-spacing: 0.3px;
+        font-weight: 500;
       }
       .next-anniversary .anniversary-text:hover .milestone-tooltip {
         visibility: visible;
@@ -509,17 +520,20 @@ function initListPage() {
           // Check cache first
           const cachedData = await chrome.storage.local.get('movie-cache')
           const movieCache = cachedData['movie-cache']?.[movieUrl]
-          const CACHE_EXPIRY = 24 * 60 * 60 * 1000 // 24 hours in milliseconds
-
-          if (movieCache && Date.now() - movieCache.lastFetched < CACHE_EXPIRY) {
-            // Use cached data
-            const releaseDate = new Date(movieCache.releaseDate)
-            const nextAnniversary = new Date(movieCache.nextAnniversary)
-            return {
-              title,
-              releaseDate,
-              nextAnniversary,
-              url: movieUrl
+          // Use next anniversary as cache expiry
+          if (movieCache) {
+            const nextAnniversaryDate = new Date(movieCache.nextAnniversary)
+            // Only use cache if next anniversary hasn't passed yet
+            if (nextAnniversaryDate > new Date()) {
+              // Use cached data
+              const releaseDate = new Date(movieCache.releaseDate)
+              const nextAnniversary = new Date(movieCache.nextAnniversary)
+              return {
+                title,
+                releaseDate,
+                nextAnniversary,
+                url: movieUrl
+              }
             }
           }
 
