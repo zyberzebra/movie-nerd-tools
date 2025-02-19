@@ -1,7 +1,142 @@
 import { type PlasmoCSConfig } from "plasmo"
+import React from "react"
+import { useStorage } from "@plasmohq/storage/hook"
 
 export const config: PlasmoCSConfig = {
-  matches: ["https://letterboxd.com/film/*"]
+  matches: ["https://letterboxd.com/film/*", "https://letterboxd.com/*/list/*"]
+}
+
+interface MovieAnniversary {
+  title: string
+  releaseDate: Date
+  nextAnniversary: Date
+  url: string
+}
+
+interface CachedMovieData {
+  [key: string]: {
+    releaseDate: string
+    lastFetched: number
+    nextAnniversary: string
+  }
+}
+
+function ContentScript() {
+  React.useEffect(() => {
+    init()
+  }, [])
+
+  return null
+}
+
+export default ContentScript
+
+function createAnniversaryPanel() {
+  const panel = document.createElement('div')
+  panel.className = 'anniversary-panel'
+  panel.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #14181c;
+    border: 1px solid #456;
+    border-radius: 4px;
+    padding: 20px;
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    z-index: 9999;
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  `
+  return panel
+}
+
+function createPanelHeader() {
+  const header = document.createElement('div')
+  header.style.cssText = `
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #456;
+  `
+  
+  const title = document.createElement('h2')
+  title.textContent = 'Upcoming Movie Anniversaries'
+  title.style.cssText = `
+    margin: 0;
+    font-size: 20px;
+    color: #fff;
+  `
+  
+  const closeButton = document.createElement('button')
+  closeButton.innerHTML = '×'
+  closeButton.style.cssText = `
+    background: none;
+    border: none;
+    color: #89a;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 4px 8px;
+    line-height: 1;
+  `
+  closeButton.addEventListener('click', () => {
+    document.querySelector('.anniversary-panel')?.remove()
+  })
+  
+  header.appendChild(title)
+  header.appendChild(closeButton)
+  return header
+}
+
+function getOrdinalSuffix(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return s[(v - 20) % 10] || s[v] || s[0];
+}
+
+function createMovieAnniversaryElement(movie: MovieAnniversary) {
+  const element = document.createElement('div')
+  element.style.cssText = `
+    padding: 12px;
+    border-bottom: 1px solid #2c3440;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  `
+  
+  const yearsSinceRelease = movie.nextAnniversary.getFullYear() - movie.releaseDate.getFullYear()
+  
+  element.innerHTML = `
+    <div style="flex: 1">
+      <a href="${movie.url}" style="color: #fff; text-decoration: none; font-weight: 500;">${movie.title}</a>
+      <div style="color: #89a; font-size: 13px; margin-top: 4px;">
+        ${yearsSinceRelease}${getOrdinalSuffix(yearsSinceRelease)} anniversary on ${formatDate(movie.nextAnniversary)}
+      </div>
+    </div>
+    <button class="calendar-export-btn" aria-label="Export to calendar" style="margin-left: 12px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+        <line x1="16" y1="2" x2="16" y2="6"></line>
+        <line x1="8" y1="2" x2="8" y2="6"></line>
+        <line x1="3" y1="10" x2="21" y2="10"></line>
+      </svg>
+    </button>
+  `
+  
+  const exportBtn = element.querySelector('.calendar-export-btn')
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      const iCalContent = generateICalendarFile(movie.title, movie.nextAnniversary, movie.url)
+      downloadICalendarFile(iCalContent, `${movie.title.replace(/[^a-z0-9]/gi, '_')}_anniversary.ics`)
+    })
+  }
+  
+  return element
 }
 
 function calculateNextAnniversary(releaseDate: Date): Date {
@@ -55,6 +190,12 @@ function init() {
 
   console.log('Initializing Letterboxd anniversary extension')
   
+  // Check if we're on a list page
+  if (window.location.pathname.includes('/list/')) {
+    initListPage()
+    return
+  }
+
   // Use a more robust way to wait for the film header
   const maxAttempts = 20 // Increased max attempts
   let attempts = 0
@@ -278,6 +419,196 @@ const observer = new MutationObserver((mutations) => {
     resetInit()
   }
 })
+
+function initListPage() {
+  console.log('Initializing list page functionality')
+  const listHeader = document.querySelector('.list-title-intro')
+  if (!listHeader) {
+    console.log('List header not found')
+    return
+  }
+
+  // Create and add the "Show Anniversaries" button
+  const showAnniversariesBtn = document.createElement('button')
+  showAnniversariesBtn.textContent = 'Show Upcoming Anniversaries'
+  showAnniversariesBtn.style.cssText = `
+    background: #00c030;
+    color: #fff;
+    border: none;
+    border-radius: 3px;
+    padding: 8px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    margin-top: 16px;
+    transition: background-color 0.2s;
+  `
+  showAnniversariesBtn.addEventListener('mouseover', () => {
+    showAnniversariesBtn.style.backgroundColor = '#00a028'
+  })
+  showAnniversariesBtn.addEventListener('mouseout', () => {
+    showAnniversariesBtn.style.backgroundColor = '#00c030'
+  })
+
+  listHeader.appendChild(showAnniversariesBtn)
+
+  showAnniversariesBtn.addEventListener('click', async () => {
+    const movieElements = document.querySelectorAll('.poster-container')
+    const totalMovies = movieElements.length
+    let processedMovies = 0
+    const movies: MovieAnniversary[] = []
+    const BATCH_SIZE = 5 // Process 5 movies simultaneously
+    const DELAY_BETWEEN_BATCHES = 1000 // 1 second delay between batches
+
+    // Create loading indicator
+    const loadingIndicator = document.createElement('div')
+    loadingIndicator.style.cssText = `
+      margin-top: 16px;
+      color: #89a;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    `
+    const spinner = document.createElement('div')
+    spinner.style.cssText = `
+      width: 16px;
+      height: 16px;
+      border: 2px solid #89a;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    `
+    const style = document.createElement('style')
+    style.textContent = `
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    `
+    document.head.appendChild(style)
+    
+    loadingIndicator.appendChild(spinner)
+    const progressText = document.createElement('span')
+    loadingIndicator.appendChild(progressText)
+    listHeader.appendChild(loadingIndicator)
+
+    showAnniversariesBtn.disabled = true
+    showAnniversariesBtn.style.opacity = '0.7'
+    showAnniversariesBtn.style.cursor = 'not-allowed'
+
+    // Process movies in batches
+    const movieArray = Array.from(movieElements)
+    for (let i = 0; i < movieArray.length; i += BATCH_SIZE) {
+      const batch = movieArray.slice(i, i + BATCH_SIZE)
+      const batchPromises = batch.map(async (movieElement) => {
+        const link = movieElement.querySelector('a')
+        const title = movieElement.querySelector('img')?.alt
+        if (!link || !title) return null
+
+        const movieUrl = link.href
+        try {
+          // Check cache first
+          const cachedData = await chrome.storage.local.get('movie-cache')
+          const movieCache = cachedData['movie-cache']?.[movieUrl]
+          const CACHE_EXPIRY = 24 * 60 * 60 * 1000 // 24 hours in milliseconds
+
+          if (movieCache && Date.now() - movieCache.lastFetched < CACHE_EXPIRY) {
+            // Use cached data
+            const releaseDate = new Date(movieCache.releaseDate)
+            const nextAnniversary = new Date(movieCache.nextAnniversary)
+            return {
+              title,
+              releaseDate,
+              nextAnniversary,
+              url: movieUrl
+            }
+          }
+
+          // Fetch fresh data if cache miss or expired
+          const response = await fetch(movieUrl)
+          const html = await response.text()
+          const parser = new DOMParser()
+          const doc = parser.parseFromString(html, 'text/html')
+          const releaseDateElement = doc.querySelector('.release-table .date')
+          
+          if (releaseDateElement) {
+            const releaseText = releaseDateElement.textContent?.trim()
+            if (releaseText) {
+              const releaseDate = new Date(releaseText)
+              if (!isNaN(releaseDate.getTime())) {
+                const nextAnniversary = calculateNextAnniversary(releaseDate)
+
+                // Update cache
+                const existingCache = (await chrome.storage.local.get('movie-cache'))['movie-cache'] || {}
+                existingCache[movieUrl] = {
+                  releaseDate: releaseDate.toISOString(),
+                  nextAnniversary: nextAnniversary.toISOString(),
+                  lastFetched: Date.now()
+                }
+                await chrome.storage.local.set({ 'movie-cache': existingCache })
+
+                return {
+                  title,
+                  releaseDate,
+                  nextAnniversary,
+                  url: movieUrl
+                }
+              }
+            }
+          }
+          return null
+        } catch (error) {
+          console.error(`Error fetching movie data for ${title}:`, error)
+          return null
+        }
+      })
+
+      const batchResults = await Promise.all(batchPromises)
+      processedMovies += batch.length
+      progressText.textContent = `Processing movies... ${processedMovies}/${totalMovies} (${Math.round(processedMovies/totalMovies*100)}%)`
+      
+      movies.push(...batchResults.filter((result): result is MovieAnniversary => result !== null))
+
+      // Add delay between batches to prevent overwhelming the server
+      if (i + BATCH_SIZE < movieArray.length) {
+        await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES))
+      }
+    }
+
+    // Remove loading indicator
+    loadingIndicator.remove()
+    showAnniversariesBtn.disabled = false
+    showAnniversariesBtn.style.opacity = '1'
+    showAnniversariesBtn.style.cursor = 'pointer'
+
+    // Sort movies by next anniversary date
+    movies.sort((a, b) => a.nextAnniversary.getTime() - b.nextAnniversary.getTime())
+
+    // Create and show the panel
+    const panel = createAnniversaryPanel()
+    const header = createPanelHeader()
+    panel.appendChild(header)
+
+    if (movies.length === 0) {
+      const noMoviesMessage = document.createElement('div')
+      noMoviesMessage.style.cssText = `
+        padding: 20px;
+        text-align: center;
+        color: #89a;
+      `
+      noMoviesMessage.textContent = 'No movie anniversaries found.'
+      panel.appendChild(noMoviesMessage)
+    } else {
+      // Add movies to the panel
+      movies.forEach(movie => {
+        panel.appendChild(createMovieAnniversaryElement(movie))
+      })
+    }
+
+    document.body.appendChild(panel)
+  })
+
+  isInitialized = true
+}
 
 observer.observe(document.body, {
   childList: true,
