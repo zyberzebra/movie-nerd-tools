@@ -126,14 +126,56 @@ function init() {
       return s[(v - 20) % 10] || s[v] || s[0];
     };
 
+    function generateICalendarFile(movieTitle: string, anniversaryDate: Date, letterboxdUrl: string): string {
+      const now = new Date()
+      const formatICalDate = (date: Date) => date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+      
+      return [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//Movie Anniversary//EN',
+        'BEGIN:VEVENT',
+        `DTSTAMP:${formatICalDate(now)}`,
+        `DTSTART;VALUE=DATE:${anniversaryDate.toISOString().split('T')[0].replace(/-/g, '')}`,
+        `SUMMARY:${movieTitle} Anniversary`,
+        `DESCRIPTION:Anniversary of ${movieTitle}\nView on Letterboxd: ${letterboxdUrl}`,
+        'END:VEVENT',
+        'END:VCALENDAR'
+      ].join('\r\n')
+    }
+    
+    function downloadICalendarFile(content: string, filename: string) {
+      const blob = new Blob([content], { type: 'text/calendar;charset=utf-8;method=REQUEST' })
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = filename
+      link.type = 'text/calendar'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(link.href)
+    }
+    
     const yearsSinceRelease = nextAnniversary.getFullYear() - releaseDate.getFullYear()
     anniversaryElement.innerHTML = `
       <div class="anniversary-text">${yearsSinceRelease}${getOrdinalSuffix(yearsSinceRelease)} anniversary on ${formatDate(nextAnniversary)}
         <div class="milestone-tooltip">${nextMilestone.years}${getOrdinalSuffix(nextMilestone.years)} anniversary on ${formatDate(nextMilestone.date)}</div>
       </div>
+      <button class="calendar-export-btn" aria-label="Export to calendar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+          <line x1="16" y1="2" x2="16" y2="6"></line>
+          <line x1="8" y1="2" x2="8" y2="6"></line>
+          <line x1="3" y1="10" x2="21" y2="10"></line>
+        </svg>
+      </button>
     `
     anniversaryElement.style.cssText += `
       position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
     `
     const style = document.createElement('style')
     style.textContent = `
@@ -163,10 +205,35 @@ function init() {
         visibility: visible;
         opacity: 1;
       }
+      .calendar-export-btn {
+        background: none;
+        border: none;
+        padding: 4px;
+        cursor: pointer;
+        color: #89a;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: color 0.2s;
+      }
+      .calendar-export-btn:hover {
+        color: #fff;
+      }
     `
     document.head.appendChild(style)
     console.log('Adding anniversary element to page')
     
+    // Add click handler for calendar export
+    const exportBtn = anniversaryElement.querySelector('.calendar-export-btn')
+    if (exportBtn) {
+      exportBtn.addEventListener('click', () => {
+        const movieTitle = document.querySelector('h1')?.textContent || 'Movie'
+        const letterboxdUrl = window.location.href
+        const iCalContent = generateICalendarFile(movieTitle, nextAnniversary, letterboxdUrl)
+        downloadICalendarFile(iCalContent, `${movieTitle.replace(/[^a-z0-9]/gi, '_')}_anniversary.ics`)
+      })
+    }
+
     ratingsSection.parentElement?.appendChild(anniversaryElement)
     isInitialized = true
   }
